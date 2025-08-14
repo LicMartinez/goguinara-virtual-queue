@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 {
   "buildCommand": "npm run build",
   "outputDirectory": ".next",
@@ -33,40 +32,4 @@
       "destination": "/admin"
     }
   ]
-=======
-{
-  "buildCommand": "npm run build",
-  "outputDirectory": ".next",
-  "framework": "nextjs",
-  "functions": {
-    "src/app/api/**/*.ts": {
-      "maxDuration": 30
-    }
-  },
-  "headers": [
-    {
-      "source": "/api/(.*)",
-      "headers": [
-        {
-          "key": "Access-Control-Allow-Origin",
-          "value": "*"
-        },
-        {
-          "key": "Access-Control-Allow-Methods",
-          "value": "GET, POST, PUT, DELETE, OPTIONS"
-        },
-        {
-          "key": "Access-Control-Allow-Headers",
-          "value": "Content-Type, Authorization"
-        }
-      ]
-    }
-  ],
-  "rewrites": [
-    {
-      "source": "/admin",
-      "destination": "/admin"
-    }
-  ]
->>>>>>> 39b3e8a615fe1a5d87fdebb326404636e2620585
 }
