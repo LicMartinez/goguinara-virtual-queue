@@ -38,7 +38,7 @@ export async function POST(request: Request) {
     let body;
     try {
       body = await request.json();
-    } catch (parseError) {
+    } catch (_parseError) {
       return NextResponse.json(
         { error: 'Formato de datos inválido' }, 
         { status: 400 }
