@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 
 interface QueueEntry {
@@ -48,7 +48,8 @@ export default function AdminPage() {
       } else {
         setError('Contraseña incorrecta');
       }
-    } catch (error) {
+    } catch (err) {
+      console.error(err);
       setError('Error al conectar con el servidor');
     } finally {
       setIsAuthenticating(false);
@@ -56,7 +57,7 @@ export default function AdminPage() {
     }
   };
 
-  const fetchAdminData = async () => {
+  const fetchAdminData = useCallback(async () => {
     if (!isAuthenticated) return;
 
     try {
@@ -72,10 +73,11 @@ export default function AdminPage() {
       } else {
         setError('Error al cargar datos');
       }
-    } catch (error) {
+    } catch (err) {
+      console.error(err);
       setError('Error al conectar con el servidor');
     }
-  };
+  }, [isAuthenticated, password]);
 
   const callNext = async () => {
     if (!adminData || adminData.waiting.length === 0) {
@@ -97,10 +99,10 @@ export default function AdminPage() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${password}`
         },
-        body: JSON.stringify({ 
-          action: 'updateStatus', 
-          rowIndex, 
-          newStatus 
+        body: JSON.stringify({
+          action: 'updateStatus',
+          rowIndex,
+          newStatus
         })
       });
 
@@ -110,7 +112,8 @@ export default function AdminPage() {
         const data = await response.json();
         alert(data.error || 'Error al actualizar estado');
       }
-    } catch (error) {
+    } catch (err) {
+      console.error(err);
       alert('Error al conectar con el servidor');
     }
   };
@@ -129,9 +132,9 @@ export default function AdminPage() {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${password}`
         },
-        body: JSON.stringify({ 
-          action: 'setAverageWaitTime', 
-          averageWaitTime: newWaitTime 
+        body: JSON.stringify({
+          action: 'setAverageWaitTime',
+          averageWaitTime: newWaitTime
         })
       });
 
@@ -143,7 +146,8 @@ export default function AdminPage() {
       } else {
         alert(data.error || 'Error al actualizar tiempo promedio');
       }
-    } catch (error) {
+    } catch (err) {
+      console.error(err);
       alert('Error al conectar con el servidor');
     } finally {
       setIsUpdatingWaitTime(false);
@@ -177,7 +181,7 @@ export default function AdminPage() {
       const interval = setInterval(fetchAdminData, 10000); // Refresh every 10 seconds
       return () => clearInterval(interval);
     }
-  }, [isAuthenticated]);
+  }, [isAuthenticated, fetchAdminData]);
 
   // Initialize wait time when admin data is loaded
   useEffect(() => {
@@ -364,7 +368,7 @@ export default function AdminPage() {
                       En Espera ({adminData.waiting.length})
                     </h2>
                     <div className="space-y-3 max-h-96 overflow-y-auto">
-                      {adminData.waiting.map((entry, index) => (
+                      {adminData.waiting.map((entry) => (
                         <div key={entry.id} className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                           <div className="flex justify-between items-start">
                             <div>
