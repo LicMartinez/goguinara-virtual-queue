@@ -13,7 +13,189 @@ export interface QueueEntry extends SheetData {
   position: number;
 }
 
-class GoogleSheetsService { private sheets: sheets_v4.Sheets; private spreadsheetId: string; constructor() { this.validateEnvironmentVariables(); this.initializeAuth(); this.spreadsheetId = process.env.GOOGLE_SHEET_ID!; } private validateEnvironmentVariables() { const requiredVars = ['GOOGLE_SERVICE_ACCOUNT_EMAIL', 'GOOGLE_PRIVATE_KEY', 'GOOGLE_SHEET_ID']; const missing = requiredVars.filter(varName => !process.env[varName]); if (missing.length > 0) { throw new Error(`Variables de entorno faltantes: ${missing.join(', ')}`); } } private initializeAuth() { try { const auth = new google.auth.GoogleAuth({ credentials: { client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL, private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\n/g, '\n'), }, scopes: ['https://www.googleapis.com/auth/spreadsheets'], }); this.sheets = google.sheets({ version: 'v4', auth, }); } catch (error) { console.error('Error inicializando autenticación de Google:', error); throw new Error('Error de configuración de Google Sheets'); } } async appendRowToSheet(data: SheetData): Promise<{ position: number }> { try { const range = 'Hoja 1!A:E'; // Rango expandido para soportar más filas const position = await this.getNextPosition(); const response = await this.sheets.spreadsheets.values.append({ spreadsheetId: this.spreadsheetId, range, valueInputOption: 'USER_ENTERED', insertDataOption: 'INSERT_ROWS', requestBody: { values: [[data.name, data.phone, data.timestamp, data.status, position]], }, }); console.log('Fila añadida a Google Sheet:', response.data); return { position }; } catch (error) { console.error('Error al añadir fila a Google Sheet:', error); throw new Error('Error al registrar en la fila virtual'); } } async getQueueData(): Promise<QueueEntry[]> { try { // Expandir rango para soportar hasta 1000 filas (más que suficiente para 50+ personas) const range = 'Hoja 1!A1:E1000'; const response = await this.sheets.spreadsheets.values.get({ spreadsheetId: this.spreadsheetId, range, }); const rows = response.data.values || []; // Skip header row if exists const dataRows = rows.slice(1).filter(row => row && row.length > 0 && row[0]); // Filter empty rows return dataRows.map((row: string[], index: number) => ({ id: `${index + 1}`, name: row[0] || '', phone: row[1] || '', timestamp: row[2] || '', status: row[3] || 'En Espera', position: parseInt(row[4]) || index + 1, })); } catch (error) { console.error('Error al obtener datos de la fila:', error); throw new Error('Error al obtener datos de la fila'); } } async updateStatus(rowIndex: number, newStatus: string): Promise<void> { try { const range = `Hoja 1!D${rowIndex + 2}`; // +2 because of header and 0-based index await this.sheets.spreadsheets.values.update({ spreadsheetId: this.spreadsheetId, range, valueInputOption: 'USER_ENTERED', requestBody: { values: [[newStatus]], }, }); console.log(`Estado actualizado para fila ${rowIndex + 1}: ${newStatus}`); } catch (error) { console.error('Error al actualizar estado:', error); throw new Error('Error al actualizar estado'); } } private async getNextPosition(): Promise<number> { try { const queueData = await this.getQueueData(); const waitingEntries = queueData.filter(entry => entry.status === 'En Espera'); return waitingEntries.length + 1; } catch (error) { console.error('Error al calcular posición:', error); return 1; } } async getAverageWaitTime(): Promise<number> { try { // Intentar obtener el tiempo promedio desde una celda específica (G1) const response = await this.sheets.spreadsheets.values.get({ spreadsheetId: this.spreadsheetId, range: 'Hoja 1!G1', }); if (response.data.values && response.data.values[0] && response.data.values[0][0]) { const waitTime = parseInt(response.data.values[0][0]); return isNaN(waitTime) ? 5 : waitTime; // Default 5 minutos si no es válido } return 5; // Default 5 minutos } catch (error) { console.error('Error al obtener tiempo promedio:', error); return 5; // Default 5 minutos } } async setAverageWaitTime(minutes: number): Promise<void> { try { await this.sheets.spreadsheets.values.update({ spreadsheetId: this.spreadsheetId, range: 'Hoja 1!G1', valueInputOption: 'USER_ENTERED', requestBody: { values: [[minutes]], }, }); console.log(`Tiempo promedio actualizado a ${minutes} minutos`); } catch (error) { console.error('Error al actualizar tiempo promedio:', error); throw new Error('Error al actualizar tiempo promedio'); } } async initializeSheet(): Promise<void> { try { // Check if sheet has headers, if not, add them const range = 'Hoja 1!A1:G1'; const response = await this.sheets.spreadsheets.values.get({ spreadsheetId: this.spreadsheetId, range, }); if (!response.data.values || response.data.values.length === 0) { await this.sheets.spreadsheets.values.update({ spreadsheetId: this.spreadsheetId, range, valueInputOption: 'USER_ENTERED', requestBody: { values: [['Nombre', 'Teléfono', 'Timestamp', 'Estado', 'Posición', '', '5']], }, }); console.log('Headers añadidos a Google Sheet'); } else { console.log('Headers existentes:', response.data.values[0]); // Asegurar que existe el tiempo promedio por defecto if (!response.data.values[0][6]) { await this.setAverageWaitTime(5); } } } catch (error) { console.error('Error al inicializar sheet:', error); } } }
+class GoogleSheetsService {
+  private sheets!: sheets_v4.Sheets;
+  private spreadsheetId: string;
+
+  constructor() {
+    this.validateEnvironmentVariables();
+    this.initializeAuth();
+    this.spreadsheetId = process.env.GOOGLE_SHEET_ID!;
+  }
+
+  private validateEnvironmentVariables() {
+    const requiredVars = ['GOOGLE_SERVICE_ACCOUNT_EMAIL', 'GOOGLE_PRIVATE_KEY', 'GOOGLE_SHEET_ID'];
+    const missing = requiredVars.filter(varName => !process.env[varName]);
+    
+    if (missing.length > 0) {
+      throw new Error(`Variables de entorno faltantes: ${missing.join(', ')}`);
+    }
+  }
+
+  private initializeAuth() {
+    try {
+      const auth = new google.auth.GoogleAuth({
+        credentials: {
+          client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+          private_key: process.env.GOOGLE_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+        },
+        scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+      });
+
+      this.sheets = google.sheets({
+        version: 'v4',
+        auth,
+      });
+    } catch (error) {
+      console.error('Error inicializando autenticación de Google:', error);
+      throw new Error('Error de configuración de Google Sheets');
+    }
+  }
+
+  async appendRowToSheet(data: SheetData): Promise<{ position: number }> {
+    try {
+      const range = 'Hoja 1!A:E';
+      const position = await this.getNextPosition();
+      
+      const response = await this.sheets.spreadsheets.values.append({
+        spreadsheetId: this.spreadsheetId,
+        range,
+        valueInputOption: 'USER_ENTERED',
+        insertDataOption: 'INSERT_ROWS',
+        requestBody: {
+          values: [[data.name, data.phone, data.timestamp, data.status, position]],
+        },
+      });
+
+      console.log('Fila añadida a Google Sheet:', response.data);
+      return { position };
+    } catch (error) {
+      console.error('Error al añadir fila a Google Sheet:', error);
+      throw new Error('Error al registrar en la fila virtual');
+    }
+  }
+
+  async getQueueData(): Promise<QueueEntry[]> {
+    try {
+      const range = 'Hoja 1!A1:E1000';
+      const response = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: this.spreadsheetId,
+        range,
+      });
+
+      const rows = response.data.values || [];
+      const dataRows = rows.slice(1).filter(row => row && row.length > 0 && row[0]);
+      
+      return dataRows.map((row: string[], index: number) => ({
+        id: `${index + 1}`,
+        name: row[0] || '',
+        phone: row[1] || '',
+        timestamp: row[2] || '',
+        status: row[3] || 'En Espera',
+        position: parseInt(row[4]) || index + 1,
+      }));
+    } catch (error) {
+      console.error('Error al obtener datos de la fila:', error);
+      throw new Error('Error al obtener datos de la fila');
+    }
+  }
+
+  async updateStatus(rowIndex: number, newStatus: string): Promise<void> {
+    try {
+      const range = `Hoja 1!D${rowIndex + 2}`;
+      
+      await this.sheets.spreadsheets.values.update({
+        spreadsheetId: this.spreadsheetId,
+        range,
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+          values: [[newStatus]],
+        },
+      });
+
+      console.log(`Estado actualizado para fila ${rowIndex + 1}: ${newStatus}`);
+    } catch (error) {
+      console.error('Error al actualizar estado:', error);
+      throw new Error('Error al actualizar estado');
+    }
+  }
+
+  private async getNextPosition(): Promise<number> {
+    try {
+      const queueData = await this.getQueueData();
+      const waitingEntries = queueData.filter(entry => entry.status === 'En Espera');
+      return waitingEntries.length + 1;
+    } catch (error) {
+      console.error('Error al calcular posición:', error);
+      return 1;
+    }
+  }
+
+  async getAverageWaitTime(): Promise<number> {
+    try {
+      const response = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: this.spreadsheetId,
+        range: 'Hoja 1!G1',
+      });
+
+      if (response.data.values && response.data.values[0] && response.data.values[0][0]) {
+        const waitTime = parseInt(response.data.values[0][0]);
+        return isNaN(waitTime) ? 5 : waitTime;
+      }
+      
+      return 5;
+    } catch (error) {
+      console.error('Error al obtener tiempo promedio:', error);
+      return 5;
+    }
+  }
+
+  async setAverageWaitTime(minutes: number): Promise<void> {
+    try {
+      await this.sheets.spreadsheets.values.update({
+        spreadsheetId: this.spreadsheetId,
+        range: 'Hoja 1!G1',
+        valueInputOption: 'USER_ENTERED',
+        requestBody: {
+          values: [[minutes]],
+        },
+      });
+      console.log(`Tiempo promedio actualizado a ${minutes} minutos`);
+    } catch (error) {
+      console.error('Error al actualizar tiempo promedio:', error);
+      throw new Error('Error al actualizar tiempo promedio');
+    }
+  }
+
+  async initializeSheet(): Promise<void> {
+    try {
+      const range = 'Hoja 1!A1:G1';
+      const response = await this.sheets.spreadsheets.values.get({
+        spreadsheetId: this.spreadsheetId,
+        range,
+      });
+
+      if (!response.data.values || response.data.values.length === 0) {
+        await this.sheets.spreadsheets.values.update({
+          spreadsheetId: this.spreadsheetId,
+          range,
+          valueInputOption: 'USER_ENTERED',
+          requestBody: {
+            values: [['Nombre', 'Teléfono', 'Timestamp', 'Estado', 'Posición', '', '5']],
+          },
+        });
+        console.log('Headers añadidos a Google Sheet');
+      } else {
+        console.log('Headers existentes:', response.data.values[0]);
+        if (!response.data.values[0][6]) {
+          await this.setAverageWaitTime(5);
+        }
+      }
+    } catch (error) {
+      console.error('Error al inicializar sheet:', error);
+    }
+  }
+}
 
 // Export singleton instance
 const googleSheetsService = new GoogleSheetsService();
