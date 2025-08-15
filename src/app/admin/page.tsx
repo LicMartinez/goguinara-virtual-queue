@@ -230,13 +230,13 @@ export default function AdminPage() {
     const cleanPhone = phone.replace(/\D/g, '');
     
     // Mensaje personalizado con información adicional
-    let message = `Hola ${name}! 👋\n\nTu turno ha llegado en Goguinara. Por favor dirígete a tu mesa.\n\n📍 Tu número de turno: ${position}\n👥 Mesa para ${diners} ${diners === 1 ? 'persona' : 'personas'}\n⏰ Es tu momento de ser atendido`;
+    let message = `Hola ${name}! 👋\n\nTu turno ha llegado en Goguinara. Por favor dirígete al lugar.\n\n📍 Tu número de turno: ${position}\n👥 Mesa para ${diners} ${diners === 1 ? 'persona' : 'personas'}\n⏰ Es tu momento de disfrutar de la comida`;
     
     if (allergies) {
       message += `\n🚨 Alergias reportadas: ${allergies}`;
     }
     
-    message += `\n\n¡Gracias por tu paciencia!`;
+    message += `\n\n¡Agradecemos tu paciencia!`;
     
     // Detectar si es dispositivo móvil y si WhatsApp está instalado
     const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
@@ -469,10 +469,14 @@ export default function AdminPage() {
                       {adminData.waiting.map((entry) => (
                         <div key={entry.id} className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
                           <div className="flex justify-between items-start">
-                            <div>
+                            <div className="flex-1">
                               <p className="font-semibold text-gray-800">#{entry.position} - {entry.name}</p>
                               <p className="text-sm text-gray-600">{entry.phone}</p>
                               <p className="text-xs text-gray-500">{formatTime(entry.timestamp)}</p>
+                              <p className="text-xs text-blue-600">👥 {entry.diners} {entry.diners === 1 ? 'persona' : 'personas'}</p>
+                              {entry.hasAllergies && (
+                                <p className="text-xs text-red-600">🚨 Alergias: {entry.allergies}</p>
+                              )}
                             </div>
                             <div className="flex flex-col gap-1">
                               <button
@@ -543,6 +547,119 @@ export default function AdminPage() {
                     </div>
                   </div>
                 </div>
+              </div>
+
+              {/* POS Integration */}
+              <div className="p-6 border-t border-gray-200">
+                <h2 className="text-xl font-semibold text-gray-800 mb-4">
+                  Integración POS - Gestión de Mesas
+                </h2>
+                
+                {/* POS Configuration */}
+                <div className="mb-6 bg-gray-50 p-4 rounded-lg">
+                  <h3 className="text-lg font-medium text-gray-700 mb-3">Configuración POS</h3>
+                  <div className="flex gap-3 items-end">
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-gray-600 mb-1">
+                        Ruta del POS (donde está Mesas.dbf)
+                      </label>
+                      <input
+                        type="text"
+                        className="w-full px-3 py-2 border border-gray-300 rounded-md text-sm"
+                        placeholder="C:\POS\Data\ o /home/pos/data/"
+                        value={posPath}
+                        onChange={(e) => setPosPath(e.target.value)}
+                      />
+                    </div>
+                    <button
+                      onClick={loadTables}
+                      disabled={isLoadingTables || !posPath.trim()}
+                      className="bg-purple-600 hover:bg-purple-700 disabled:bg-gray-400 text-white px-4 py-2 rounded-md text-sm font-medium"
+                    >
+                      {isLoadingTables ? 'Cargando...' : 'Cargar Mesas'}
+                    </button>
+                  </div>
+                  <p className="text-xs text-gray-500 mt-2">
+                    Las mesas se actualizarán automáticamente cada 5 minutos
+                  </p>
+                </div>
+
+                {/* Tables Display */}
+                {tables.length > 0 && (
+                  <div>
+                    <h3 className="text-lg font-medium text-gray-700 mb-3">
+                      Estado de Mesas ({tables.length} mesas)
+                    </h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-4">
+                      {tables.map((table) => (
+                        <div
+                          key={table.code}
+                          className={`p-3 rounded-lg border-2 cursor-pointer transition-all ${getTableColor(table)} ${
+                            selectedTable === table.code ? 'ring-2 ring-blue-500' : ''
+                          }`}
+                          onClick={() => table.status === 0 ? setSelectedTable(table.code) : null}
+                        >
+                          <div className="text-center">
+                            <p className="font-semibold text-sm">{table.code}</p>
+                            <p className="text-xs">{getTableStatus(table)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+
+                    {/* Legend */}
+                    <div className="flex gap-4 text-xs mb-4">
+                      <div className="flex items-center gap-1">
+                        <div className="w-3 h-3 bg-green-100 border border-green-300 rounded"></div>
+                        <span>Libre</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <div className="w-3 h-3 bg-red-100 border border-red-300 rounded"></div>
+                        <span>Ocupada</span>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <div className="w-3 h-3 bg-blue-100 border border-blue-300 rounded"></div>
+                        <span>Cuenta solicitada</span>
+                      </div>
+                    </div>
+
+                    {/* Table Assignment */}
+                    {selectedTable && adminData.waiting.length > 0 && (
+                      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                        <h4 className="font-medium text-blue-800 mb-3">
+                          Asignar Mesa {selectedTable}
+                        </h4>
+                        <div className="space-y-2 max-h-40 overflow-y-auto">
+                          {adminData.waiting.slice(0, 5).map((entry) => (
+                            <div
+                              key={entry.id}
+                              className="flex justify-between items-center bg-white p-2 rounded border"
+                            >
+                              <div>
+                                <span className="font-medium">#{entry.position} - {entry.name}</span>
+                                <span className="text-sm text-gray-600 ml-2">
+                                  ({entry.diners} {entry.diners === 1 ? 'persona' : 'personas'})
+                                </span>
+                              </div>
+                              <button
+                                onClick={() => assignTable(entry.phone, selectedTable)}
+                                className="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1 rounded text-sm"
+                              >
+                                Asignar
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                        <button
+                          onClick={() => setSelectedTable('')}
+                          className="mt-3 text-sm text-gray-600 hover:text-gray-800"
+                        >
+                          Cancelar selección
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </>
           )}
