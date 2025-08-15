@@ -15,13 +15,37 @@ interface RegistrationResult {
 export default function RegisterPage() {
   const [name, setName] = useState('');
   const [phone, setPhone] = useState('');
+  const [diners, setDiners] = useState(2);
+  const [hasAllergies, setHasAllergies] = useState(false);
+  const [allergies, setAllergies] = useState('');
   const [message, setMessage] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [registrationResult, setRegistrationResult] = useState<RegistrationResult | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
 
+  // Validar que sea día válido (lunes a domingo, puedes ajustar según necesites)
+  const isValidDay = () => {
+    const today = new Date();
+    const dayOfWeek = today.getDay(); // 0 = domingo, 1 = lunes, etc.
+    // Por ahora permitimos todos los días, puedes cambiar esta lógica
+    return dayOfWeek >= 0 && dayOfWeek <= 6;
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    
+    // Validar día
+    if (!isValidDay()) {
+      setMessage('El restaurante no está disponible hoy. Por favor intenta otro día.');
+      return;
+    }
+
+    // Validar alergias si está marcado
+    if (hasAllergies && !allergies.trim()) {
+      setErrors(['Por favor especifica tus alergias alimentarias']);
+      return;
+    }
+
     setIsLoading(true);
     setMessage('');
     setErrors([]);
@@ -33,7 +57,13 @@ export default function RegisterPage() {
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ name, phone }),
+        body: JSON.stringify({ 
+          name, 
+          phone, 
+          diners,
+          hasAllergies,
+          allergies: hasAllergies ? allergies : ''
+        }),
       });
 
       const data = await response.json();
@@ -44,6 +74,9 @@ export default function RegisterPage() {
         if (!data.alreadyRegistered) {
           setName('');
           setPhone('');
+          setDiners(2);
+          setHasAllergies(false);
+          setAllergies('');
         }
       } else {
         if (data.details && Array.isArray(data.details)) {
@@ -119,6 +152,58 @@ export default function RegisterPage() {
                 required
               />
               <p className="text-xs text-gray-500 mt-1">Formato: 10 dígitos sin espacios ni símbolos</p>
+            </div>
+
+            <div>
+              <label htmlFor="diners" className="block text-gray-700 text-sm font-semibold mb-2">
+                Número de Comensales *
+              </label>
+              <select
+                id="diners"
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                value={diners}
+                onChange={(e) => setDiners(parseInt(e.target.value))}
+                disabled={isLoading}
+                required
+              >
+                {[1,2,3,4,5,6,7,8,9,10,11,12].map(num => (
+                  <option key={num} value={num}>{num} {num === 1 ? 'persona' : 'personas'}</option>
+                ))}
+              </select>
+            </div>
+
+            <div>
+              <div className="flex items-center mb-3">
+                <input
+                  type="checkbox"
+                  id="hasAllergies"
+                  className="w-4 h-4 text-blue-600 bg-gray-100 border-gray-300 rounded focus:ring-blue-500 focus:ring-2"
+                  checked={hasAllergies}
+                  onChange={(e) => setHasAllergies(e.target.checked)}
+                  disabled={isLoading}
+                />
+                <label htmlFor="hasAllergies" className="ml-2 text-sm font-medium text-gray-700">
+                  Tengo alergias alimentarias
+                </label>
+              </div>
+              
+              {hasAllergies && (
+                <div className="mt-3">
+                  <label htmlFor="allergies" className="block text-gray-700 text-sm font-semibold mb-2">
+                    Especifica tus alergias *
+                  </label>
+                  <textarea
+                    id="allergies"
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                    placeholder="Ej: Mariscos, nueces, gluten, lactosa..."
+                    value={allergies}
+                    onChange={(e) => setAllergies(e.target.value)}
+                    disabled={isLoading}
+                    required={hasAllergies}
+                    rows={3}
+                  />
+                </div>
+              )}
             </div>
 
             <button

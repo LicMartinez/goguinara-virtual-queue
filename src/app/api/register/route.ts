@@ -45,14 +45,21 @@ export async function POST(request: Request) {
       );
     }
 
-    const { name: rawName, phone: rawPhone } = body;
+    const { 
+      name: rawName, 
+      phone: rawPhone, 
+      diners = 2, 
+      hasAllergies = false, 
+      allergies: rawAllergies = '' 
+    } = body;
 
     // Sanitize inputs
     const name = sanitizeInput(rawName || '');
     const phone = sanitizeInput(rawPhone || '');
+    const allergies = hasAllergies ? sanitizeInput(rawAllergies || '') : '';
 
     // Validate data
-    const validation = validateRegistrationData(name, phone);
+    const validation = validateRegistrationData(name, phone, diners, hasAllergies, allergies);
     if (!validation.isValid) {
       return NextResponse.json(
         { error: 'Datos inválidos', details: validation.errors }, 
@@ -91,7 +98,10 @@ export async function POST(request: Request) {
         name: name.trim(), 
         phone: formattedPhone, 
         timestamp, 
-        status 
+        status,
+        diners,
+        hasAllergies,
+        allergies
       });
 
       console.log(`Datos registrados en Google Sheet: Nombre - ${name}, Teléfono - ${formattedPhone}`);

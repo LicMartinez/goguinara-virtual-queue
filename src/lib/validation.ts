@@ -3,7 +3,13 @@ export interface ValidationResult {
   errors: string[];
 }
 
-export function validateRegistrationData(name: string, phone: string): ValidationResult {
+export function validateRegistrationData(
+  name: string, 
+  phone: string, 
+  diners: number = 2, 
+  hasAllergies: boolean = false, 
+  allergies: string = ''
+): ValidationResult {
   const errors: string[] = [];
 
   // Validate name
@@ -26,6 +32,20 @@ export function validateRegistrationData(name: string, phone: string): Validatio
       errors.push('El número de teléfono debe tener al menos 10 dígitos');
     } else if (cleanPhone.length > 15) {
       errors.push('El número de teléfono no puede exceder 15 dígitos');
+    }
+  }
+
+  // Validate diners
+  if (diners < 1 || diners > 12) {
+    errors.push('El número de comensales debe estar entre 1 y 12');
+  }
+
+  // Validate allergies if specified
+  if (hasAllergies) {
+    if (!allergies || allergies.trim().length === 0) {
+      errors.push('Debe especificar las alergias alimentarias');
+    } else if (allergies.trim().length > 200) {
+      errors.push('La descripción de alergias no puede exceder 200 caracteres');
     }
   }
 

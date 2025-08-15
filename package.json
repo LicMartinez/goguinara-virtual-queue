@@ -13,6 +13,7 @@
     "test:connection": "node scripts/test-connection.js",
     "test:large-queue": "node scripts/test-large-queue.js",
     "test:wait-time": "node scripts/test-wait-time.js",
+    "test:new-features": "node scripts/test-new-features.js",
     "prepare:deploy": "node scripts/prepare-deploy.js"
   },
   "dependencies": {

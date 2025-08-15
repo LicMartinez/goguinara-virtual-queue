@@ -10,6 +10,15 @@ interface QueueEntry {
   timestamp: string;
   status: string;
   position: number;
+  diners: number;
+  hasAllergies: boolean;
+  allergies: string;
+}
+
+interface TableInfo {
+  code: string;
+  status: number; // 0 = libre, 1 = ocupada
+  hasBill: number; // 0 = no pidió cuenta, 1 = pidió cuenta
 }
 
 interface AdminData {
@@ -29,6 +38,10 @@ export default function AdminPage() {
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [newWaitTime, setNewWaitTime] = useState<number>(5);
   const [isUpdatingWaitTime, setIsUpdatingWaitTime] = useState(false);
+  const [tables, setTables] = useState<TableInfo[]>([]);
+  const [posPath, setPosPath] = useState('');
+  const [isLoadingTables, setIsLoadingTables] = useState(false);
+  const [selectedTable, setSelectedTable] = useState<string>('');
 
   const authenticate = async () => {
     setIsAuthenticating(true);
@@ -79,16 +92,74 @@ export default function AdminPage() {
     }
   }, [isAuthenticated, password]);
 
-  const callNext = async () => {
-    if (!adminData || adminData.waiting.length === 0) {
-      alert('No hay personas en espera');
+  const loadTables = useCallback(async () => {
+    if (!posPath.trim()) {
+      alert('Por favor configura la ruta del POS primero');
       return;
     }
 
-    const nextPerson = adminData.waiting.sort((a, b) => a.position - b.position)[0];
-    
-    // Enviar mensaje de WhatsApp
-    sendWhatsAppMessage(nextPerson.phone, nextPerson.name, nextPerson.position);
+    setIsLoadingTables(true);
+    try {
+      const response = await fetch('/api/pos/tables', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${password}`
+        },
+        body: JSON.stringify({ posPath })
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        setTables(data.tables || []);
+      } else {
+        alert(data.error || 'Error al cargar mesas del POS');
+      }
+    } catch (error) {
+      alert('Error al conectar con el POS');
+    } finally {
+      setIsLoadingTables(false);
+    }
+  }, [posPath, password]);
+
+  const assignTable = async (phone: string, tableCode: string) => {
+    try {
+      const response = await fetch('/api/admin', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${password}`
+        },
+        body: JSON.stringify({
+          action: 'assignTable',
+          phone,
+          tableCode
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        alert(`Mesa ${tableCode} asignada correctamente`);
+        fetchAdminData();
+        loadTables(); // Recargar estado de mesas
+      } else {
+        alert(data.error || 'Error al asignar mesa');
+      }
+    } catch (error) {
+      alert('Error al asignar mesa');
+    }
+  };
+
+  const getTableColor = (table: TableInfo) => {
+    if (table.hasBill === 1) return 'bg-blue-100 border-blue-300 text-blue-800'; // Pidió cuenta
+    if (table.status === 1) return 'bg-red-100 border-red-300 text-red-800'; // Ocupada
+    return 'bg-green-100 border-green-300 text-green-800'; // Libre
+  };
+
+  const getTableStatus = (table: TableInfo) => {
+    if (table.hasBill === 1) return 'Cuenta solicitada';
+    if (table.status === 1) return 'Ocupada';
+    return 'Libre';
   };
 
   const updateStatus = async (rowIndex: number, newStatus: string) => {
@@ -154,20 +225,47 @@ export default function AdminPage() {
     }
   };
 
-  const sendWhatsAppMessage = (phone: string, name: string, position: number) => {
+  const sendWhatsAppMessage = (phone: string, name: string, position: number, diners: number, allergies?: string) => {
     // Limpiar el número de teléfono (remover espacios, guiones, etc.)
     const cleanPhone = phone.replace(/\D/g, '');
     
-    // Mensaje personalizado
-    const message = `Hola ${name}! 👋\n\nTu turno ha llegado en Goguinara. Por favor dirígete a tu mesa.\n\n📍 Tu número de turno: ${position}\n⏰ Es tu momento de ser atendido\n\n¡Gracias por tu paciencia!`;
+    // Mensaje personalizado con información adicional
+    let message = `Hola ${name}! 👋\n\nTu turno ha llegado en Goguinara. Por favor dirígete a tu mesa.\n\n📍 Tu número de turno: ${position}\n👥 Mesa para ${diners} ${diners === 1 ? 'persona' : 'personas'}\n⏰ Es tu momento de ser atendido`;
     
-    // Crear URL de WhatsApp Web
-    const whatsappUrl = `https://web.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
+    if (allergies) {
+      message += `\n🚨 Alergias reportadas: ${allergies}`;
+    }
     
-    // Abrir en nueva ventana
-    window.open(whatsappUrl, '_blank');
+    message += `\n\n¡Gracias por tu paciencia!`;
     
-    // Actualizar estado a "Siendo Atendido"
+    // Detectar si es dispositivo móvil y si WhatsApp está instalado
+    const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    
+    let whatsappUrl;
+    if (isMobile) {
+      // Intentar abrir la app nativa de WhatsApp
+      whatsappUrl = `whatsapp://send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
+      
+      // Fallback a WhatsApp Web si la app no está disponible
+      const fallbackUrl = `https://web.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
+      
+      // Intentar abrir la app nativa
+      const link = document.createElement('a');
+      link.href = whatsappUrl;
+      link.click();
+      
+      // Fallback después de un breve delay
+      setTimeout(() => {
+        window.open(fallbackUrl, '_blank');
+      }, 1000);
+    } else {
+      // En desktop, usar WhatsApp Web directamente
+      whatsappUrl = `https://web.whatsapp.com/send?phone=${cleanPhone}&text=${encodeURIComponent(message)}`;
+      window.open(whatsappUrl, '_blank');
+    }
+  };
+
+  const updateToServing = (phone: string) => {
     const queueData = adminData?.waiting || [];
     const entryIndex = queueData.findIndex(entry => entry.phone === phone);
     if (entryIndex !== -1) {
@@ -189,6 +287,15 @@ export default function AdminPage() {
       setNewWaitTime(adminData.averageWaitTime);
     }
   }, [adminData]);
+
+  // Auto-reload tables every 5 minutes
+  useEffect(() => {
+    if (isAuthenticated && posPath.trim()) {
+      loadTables();
+      const interval = setInterval(loadTables, 5 * 60 * 1000); // 5 minutos
+      return () => clearInterval(interval);
+    }
+  }, [isAuthenticated, posPath, loadTables]);
 
   const formatTime = (timestamp: string) => {
     return new Date(timestamp).toLocaleString('es-CO');
@@ -291,16 +398,7 @@ export default function AdminPage() {
               {/* Quick Actions */}
               <div className="p-6 border-b border-gray-200">
                 <div className="flex flex-wrap gap-4 items-center">
-                  <button
-                    onClick={callNext}
-                    disabled={adminData.waiting.length === 0}
-                    className="bg-green-600 hover:bg-green-700 disabled:bg-gray-400 text-white px-6 py-3 rounded-lg font-semibold flex items-center gap-2"
-                  >
-                    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488"/>
-                    </svg>
-                    Mensaje Siguiente ({adminData.waiting.length})
-                  </button>
+
                   <button
                     onClick={fetchAdminData}
                     className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-semibold"
@@ -376,10 +474,10 @@ export default function AdminPage() {
                               <p className="text-sm text-gray-600">{entry.phone}</p>
                               <p className="text-xs text-gray-500">{formatTime(entry.timestamp)}</p>
                             </div>
-                            <div className="flex flex-col gap-2">
+                            <div className="flex flex-col gap-1">
                               <button
-                                onClick={() => sendWhatsAppMessage(entry.phone, entry.name, entry.position)}
-                                className="bg-green-600 hover:bg-green-700 text-white px-3 py-1 rounded text-xs flex items-center gap-1"
+                                onClick={() => sendWhatsAppMessage(entry.phone, entry.name, entry.position, entry.diners, entry.allergies)}
+                                className="bg-green-600 hover:bg-green-700 text-white px-2 py-1 rounded text-xs flex items-center gap-1"
                               >
                                 <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
                                   <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.52.149-.174.198-.298.298-.497.099-.198.05-.371-.025-.52-.075-.149-.669-1.612-.916-2.207-.242-.579-.487-.5-.669-.51-.173-.008-.371-.01-.57-.01-.198 0-.52.074-.792.372-.272.297-1.04 1.016-1.04 2.479 0 1.462 1.065 2.875 1.213 3.074.149.198 2.096 3.2 5.077 4.487.709.306 1.262.489 1.694.625.712.227 1.36.195 1.871.118.571-.085 1.758-.719 2.006-1.413.248-.694.248-1.289.173-1.413-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c0 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893A11.821 11.821 0 0020.885 3.488"/>
@@ -387,8 +485,14 @@ export default function AdminPage() {
                                 Mensaje
                               </button>
                               <button
+                                onClick={() => updateToServing(entry.phone)}
+                                className="bg-blue-600 hover:bg-blue-700 text-white px-2 py-1 rounded text-xs"
+                              >
+                                Atendiendo
+                              </button>
+                              <button
                                 onClick={() => updateStatus(parseInt(entry.id) - 1, 'Cancelado')}
-                                className="bg-red-600 hover:bg-red-700 text-white px-3 py-1 rounded text-xs"
+                                className="bg-red-600 hover:bg-red-700 text-white px-2 py-1 rounded text-xs"
                               >
                                 Cancelar
                               </button>

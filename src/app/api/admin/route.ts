@@ -58,7 +58,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const { action, rowIndex, newStatus, averageWaitTime } = await request.json();
+    const { action, rowIndex, newStatus, averageWaitTime, phone, tableCode } = await request.json();
 
     if (action === 'updateStatus' && typeof rowIndex === 'number' && newStatus) {
       await updateStatus(rowIndex, newStatus);
@@ -73,27 +73,24 @@ export async function POST(request: Request) {
       });
     }
 
-    if (action === 'callNext') {
+    if (action === 'assignTable' && typeof phone === 'string' && typeof tableCode === 'string') {
       const queueData = await getQueueData();
-      const waitingQueue = queueData
-        .filter(entry => entry.status === 'En Espera')
-        .sort((a, b) => a.position - b.position);
-
-      if (waitingQueue.length === 0) {
+      const entryIndex = queueData.findIndex(entry => entry.phone === phone);
+      
+      if (entryIndex === -1) {
         return NextResponse.json(
-          { error: 'No hay personas en espera' },
-          { status: 400 }
+          { error: 'Persona no encontrada en la fila' },
+          { status: 404 }
         );
       }
 
-      const nextPerson = waitingQueue[0];
-      const rowIndex = queueData.findIndex(entry => entry.phone === nextPerson.phone);
-      
-      await updateStatus(rowIndex, 'Siendo Atendido');
+      // Actualizar estado a "Atendido" y agregar información de mesa
+      await updateStatus(entryIndex, `Mesa ${tableCode} asignada`);
       
       return NextResponse.json({
-        message: 'Siguiente persona llamada',
-        person: nextPerson
+        message: `Mesa ${tableCode} asignada correctamente`,
+        tableCode,
+        person: queueData[entryIndex]
       });
     }
 
